@@ -8,19 +8,15 @@ import scala.collection.mutable.ArrayBuffer
 
 object PetuniaUtils {
   def addOrIgnore(eachWordSet: Map[String, Int], someWords: ArrayBuffer[String]): Unit = {
-    val specialChars = Array((" "), ("."), (","), ("\t"), ("..."), ("#"), ("\u00a0"), ("("), (")"), ("-"), (":"))
     someWords.foreach { x =>
       {
-        if (!specialChars.contains(x)) {
-          val y = x.toLowerCase()
-          if (!eachWordSet.contains(y))
-            eachWordSet += y -> 1
-          else eachWordSet.update(y, eachWordSet(y) + 1)
-        }
+        if (!eachWordSet.contains(x))
+          eachWordSet += x -> 1
+        else eachWordSet.update(x, eachWordSet(x) + 1)
       }
     }
   }
-  
+
   def convert2RDD(rdd: RDD[LabeledPoint], label: LabeledPoint): RDD[LabeledPoint] = {
     rdd.map { x =>
       label

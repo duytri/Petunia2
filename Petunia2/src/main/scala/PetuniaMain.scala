@@ -40,7 +40,7 @@ object PetuniaMain {
 
     var wordSetByFile = new Array[HashMap[String, Int]](inputFiles.length) // Map[word, frequency in document]
     //Foreach text file
-    for (i <- 0 to inputFiles.length-1) {
+    for (i <- 0 to inputFiles.length - 1) {
       var wordsTmpArr = new ArrayBuffer[String]
       Source.fromFile(inputFiles(i).getAbsolutePath, "utf-8").getLines().foreach { x => wordsTmpArr.append(x) }
       PetuniaUtils.addOrIgnore(wordSetByFile(i), wordsTmpArr)
@@ -70,7 +70,7 @@ object PetuniaMain {
       tfidfWordSet(i).foreach(x => {
         if (x._2 <= lowerUpperBound._1 || x._2 >= lowerUpperBound._2) {
           tfidfWordSet(i).remove(x._1)
-        } else attrWords += x._1 
+        } else attrWords += x._1
       })
     }
 
