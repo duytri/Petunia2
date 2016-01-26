@@ -9,11 +9,11 @@ import org.apache.spark.mllib.classification.SVMModel
 import org.apache.spark.rdd.RDD
 import org.apache.spark.mllib.regression.LabeledPoint
 import org.apache.spark.mllib.linalg.Vectors
-import java.util.Properties
-import java.io.File
-import scala.collection.mutable.HashMap
+import scala.collection.mutable.Map
 import scala.collection.mutable.ArrayBuffer
 import scala.io.Source
+import java.util.Properties
+import java.io.File
 import java.io.BufferedWriter
 import java.io.FileWriter
 
@@ -38,18 +38,21 @@ object PetuniaMain {
     //~~~~~~~~~~Get all input files~~~~~~~~~~
     var inputFiles = inputDirFile0.listFiles ++ inputDirFile1.listFiles
 
-    var wordSetByFile = new Array[HashMap[String, Int]](inputFiles.length) // Map[word, frequency in document]
+    var wordSetByFile = new ArrayBuffer[Map[String, Int]](inputFiles.length) // Map[word, frequency in document]
     //Foreach text file
     for (i <- 0 to inputFiles.length - 1) {
       var wordsTmpArr = new ArrayBuffer[String]
-      Source.fromFile(inputFiles(i).getAbsolutePath, "utf-8").getLines().foreach { x => wordsTmpArr.append(x) }
-      PetuniaUtils.addOrIgnore(wordSetByFile(i), wordsTmpArr)
+      val source = Source.fromFile(inputFiles(i).getAbsolutePath, "utf-8")
+      source.getLines.foreach { x => wordsTmpArr.append(x) }
+      // Fixed too many open files exception
+      source.close
+      wordSetByFile.append(PetuniaUtils.addOrIgnore(wordsTmpArr))
     }
     //~~~~~~~~~~Calculate TFIDF~~~~~~~~~~
-    var tfidfWordSet = new Array[HashMap[String, Double]](inputFiles.length) // Map[word, TF*IDF-value]
+    var tfidfWordSet = new ArrayBuffer[Map[String, Double]](inputFiles.length) // Map[word, TF*IDF-value]
     for (i <- 0 to inputFiles.length - 1) {
       for (oneWord <- wordSetByFile(i)) {
-        tfidfWordSet(i) += oneWord._1 -> TFIDFCalc.tfIdf(oneWord, i, wordSetByFile)
+        tfidfWordSet.append(Map(oneWord._1 -> TFIDFCalc.tfIdf(oneWord, i, wordSetByFile)))
       }
     }
 
