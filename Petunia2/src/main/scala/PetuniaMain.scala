@@ -36,7 +36,9 @@ object PetuniaMain {
     val inputDirFile1 = new File(input1)
 
     //~~~~~~~~~~Get all input files~~~~~~~~~~
-    var inputFiles = inputDirFile0.listFiles ++ inputDirFile1.listFiles
+    val listFiles0 = inputDirFile0.listFiles
+    val listFiles1 = inputDirFile1.listFiles
+    var inputFiles = listFiles0 ++ listFiles1
 
     var wordSetByFile = new ArrayBuffer[Map[String, Int]](inputFiles.length) // Map[word, frequency in document]
     //Foreach text file
@@ -48,6 +50,9 @@ object PetuniaMain {
       source.close
       wordSetByFile.append(PetuniaUtils.addOrIgnore(wordsTmpArr))
     }
+    println("inputDirFile0: " + listFiles0.length)
+    println("inputDirFile1: " + listFiles1.length)
+    println("inputFiles: " + inputFiles.length)
     //~~~~~~~~~~Calculate TFIDF~~~~~~~~~~
     var tfidfWordSet = new ArrayBuffer[Map[String, Double]](inputFiles.length) // Map[word, TF*IDF-value]
     for (i <- 0 to inputFiles.length - 1) {
@@ -60,14 +65,16 @@ object PetuniaMain {
     //// Load stopwords from file
     val stopwordFilePath = "./libs/vietnamese-stopwords.txt"
     var arrStopwords = new ArrayBuffer[String]
-    Source.fromFile(stopwordFilePath, "utf-8").getLines().foreach { x => arrStopwords.append(x) }
+    val swSource = Source.fromFile(stopwordFilePath)
+    swSource.getLines.foreach { x => arrStopwords.append(x) }
+    swSource.close
     //// Foreach document, remove stopwords
     for (i <- 0 to inputFiles.length - 1) {
       tfidfWordSet(i) --= arrStopwords
     }
 
     //~~~~~~~~~~Normalize by TFIDF~~~~~~~~~~
-    val lowerUpperBound = (0, 1)
+    val lowerUpperBound = (-1d, 2d)
     var attrWords = ArrayBuffer[String]()
     for (i <- 0 to inputFiles.length - 1) {
       tfidfWordSet(i).foreach(x => {
@@ -76,10 +83,10 @@ object PetuniaMain {
         } else attrWords += x._1
       })
     }
+    PetuniaUtils.writeArray2File2(attrWords, "./libs/attr.txt")
 
     //~~~~~~~~~~Create vector~~~~~~~~~~
-    var vectorWords: RDD[LabeledPoint] = sc.emptyRDD[LabeledPoint]
-    val rdd: RDD[LabeledPoint] = sc.emptyRDD[LabeledPoint]
+    var vectorWords = new ArrayBuffer[LabeledPoint]
     for (i <- 0 to inputFiles.length - 1) {
       var vector = new ArrayBuffer[Double]
       for (word <- attrWords) {
@@ -87,15 +94,18 @@ object PetuniaMain {
           vector.append(tfidfWordSet(i).get(word).get)
         } else vector.append(0d)
       }
-      if (i < inputDirFile0.length)
-        vectorWords ++ PetuniaUtils.convert2RDD(rdd, LabeledPoint(0, Vectors.dense(vector.toArray)))
-      else
-        vectorWords ++ PetuniaUtils.convert2RDD(rdd, LabeledPoint(1, Vectors.dense(vector.toArray)))
+      if (i < listFiles0.length) {
+        vectorWords.append(LabeledPoint(0d, Vectors.dense(vector.toArray)))
+      } else {
+        vectorWords.append(LabeledPoint(1d, Vectors.dense(vector.toArray)))
+      }
     }
+    PetuniaUtils.writeArray2File(vectorWords, "./libs/vector.txt")
+    val data = sc.parallelize[LabeledPoint](vectorWords)
     //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
     // Split data into training (70%) and test (30%).
-    val splits = vectorWords.randomSplit(Array(0.7, 0.3), seed = 11L)
+    val splits = data.randomSplit(Array(0.7, 0.3), seed = 11L)
     val training = splits(0).cache()
     val test = splits(1)
 
@@ -115,6 +125,13 @@ object PetuniaMain {
     // Get evaluation metrics.
     val metrics = new BinaryClassificationMetrics(scoreAndLabels)
     val auROC = metrics.areaUnderROC()
+    val precision = metrics.precisionByThreshold.collect.toMap[Double, Double]
+    val recall = metrics.recallByThreshold.collect.toMap[Double, Double]
+    val fMeasure = metrics.fMeasureByThreshold.collect.toMap[Double, Double]
+    println("Threshold\t\tPrecision\t\tRecall\t\tF-Measure")
+    precision.foreach(x => {
+      println(x._1 + "\t\t" + x._2 + "\t\t" + recall.get(x._1).get + "\t\tn" + fMeasure.get(x._1).get)
+    })
 
     println("Area under ROC = " + auROC)
   }
