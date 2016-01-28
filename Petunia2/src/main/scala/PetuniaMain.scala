@@ -74,7 +74,7 @@ object PetuniaMain {
     }
 
     //~~~~~~~~~~Normalize by TFIDF~~~~~~~~~~
-    val lowerUpperBound = (-1d, 2d)
+    val lowerUpperBound = (0d, 0.5d)
     var attrWords = ArrayBuffer[String]()
     for (i <- 0 to inputFiles.length - 1) {
       tfidfWordSet(i).foreach(x => {
@@ -130,7 +130,7 @@ object PetuniaMain {
     val fMeasure = metrics.fMeasureByThreshold.collect.toMap[Double, Double]
     println("Threshold\t\tPrecision\t\tRecall\t\tF-Measure")
     precision.foreach(x => {
-      println(x._1 + "\t\t" + x._2 + "\t\t" + recall.get(x._1).get + "\t\tn" + fMeasure.get(x._1).get)
+      println(x._1 + "\t\t" + x._2 + "\t\t" + recall.get(x._1).get + "\t\t" + fMeasure.get(x._1).get)
     })
 
     println("Area under ROC = " + auROC)
