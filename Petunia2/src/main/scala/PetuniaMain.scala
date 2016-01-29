@@ -74,7 +74,7 @@ object PetuniaMain {
     }
 
     //~~~~~~~~~~Normalize by TFIDF~~~~~~~~~~
-    val lowerUpperBound = (0d, 0.5d)
+    val lowerUpperBound = (0.00135d, 0.7d)
     var attrWords = ArrayBuffer[String]()
     for (i <- 0 to inputFiles.length - 1) {
       tfidfWordSet(i).foreach(x => {
