@@ -12,9 +12,10 @@ object PetuniaUtils {
     var eachWordSet = Map[String, Int]()
     someWords.foreach { x =>
       {
+        if(!x.contains("“") && !x.contains("”")){
         if (!eachWordSet.contains(x))
           eachWordSet += (x -> 1)
-        else eachWordSet.update(x, eachWordSet(x) + 1)
+        else eachWordSet.update(x, eachWordSet(x) + 1)}
       }
     }
     eachWordSet

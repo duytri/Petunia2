@@ -64,13 +64,13 @@ object PetuniaMain {
         }
       else
         for (oneWord <- wordSetByFile(i)) {
-          tfidfWordSet.append(Map(oneWord._1 -> TFIDFCalc.tfIdf(oneWord, i, wordSetByType._2)))
+          tfidfWordSet.append(Map(oneWord._1 -> TFIDFCalc.tfIdf(oneWord, i - numFiles0, wordSetByType._2)))
         }
     }
 
     //~~~~~~~~~~Remove stopwords~~~~~~~~~~
     //// Load stopwords from file
-    val stopwordFilePath = "./libs/vietnamese-stopwords.txt"
+    val stopwordFilePath = "./libs/vnstopword.txt"
     var arrStopwords = new ArrayBuffer[String]
     val swSource = Source.fromFile(stopwordFilePath)
     swSource.getLines.foreach { x => arrStopwords.append(x) }
@@ -81,7 +81,8 @@ object PetuniaMain {
     }
 
     //~~~~~~~~~~Normalize by TFIDF~~~~~~~~~~
-    val lowerUpperBound = (0.00135d, 0.7d)
+    val lowerUpperBound = (args(0).toDouble, args(1).toDouble)
+    println("Argument 0 (lower bound): " + lowerUpperBound._1 + " - Argument 1 (upper bound): " + lowerUpperBound._2)
     var attrWords = ArrayBuffer[String]()
     for (i <- 0 to inputFiles.length - 1) {
       tfidfWordSet(i).foreach(x => {
