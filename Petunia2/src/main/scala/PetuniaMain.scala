@@ -20,7 +20,7 @@ import java.io.FileWriter
 object PetuniaMain {
   def main(args: Array[String]): Unit = {
     //~~~~~~~~~~Initialization~~~~~~~~~~
-    val conf = new SparkConf().setAppName("ISLab.Petunia").setMaster("local[4]")
+    val conf = new SparkConf().setAppName("ISLab.Petunia").setMaster("local[*]")
     val sc = new SparkContext(conf)
 
     val currentDir = new File(".").getCanonicalPath
@@ -39,6 +39,7 @@ object PetuniaMain {
     val listFiles0 = inputDirFile0.listFiles
     val listFiles1 = inputDirFile1.listFiles
     var inputFiles = listFiles0 ++ listFiles1
+    val numFiles0 = listFiles0.length
 
     var wordSetByFile = new ArrayBuffer[Map[String, Int]](inputFiles.length) // Map[word, frequency in document]
     //Foreach text file
@@ -55,10 +56,16 @@ object PetuniaMain {
     println("inputFiles: " + inputFiles.length)
     //~~~~~~~~~~Calculate TFIDF~~~~~~~~~~
     var tfidfWordSet = new ArrayBuffer[Map[String, Double]](inputFiles.length) // Map[word, TF*IDF-value]
+    val wordSetByType = wordSetByFile.splitAt(numFiles0)
     for (i <- 0 to inputFiles.length - 1) {
-      for (oneWord <- wordSetByFile(i)) {
-        tfidfWordSet.append(Map(oneWord._1 -> TFIDFCalc.tfIdf(oneWord, i, wordSetByFile)))
-      }
+      if (i < numFiles0)
+        for (oneWord <- wordSetByFile(i)) {
+          tfidfWordSet.append(Map(oneWord._1 -> TFIDFCalc.tfIdf(oneWord, i, wordSetByType._1)))
+        }
+      else
+        for (oneWord <- wordSetByFile(i)) {
+          tfidfWordSet.append(Map(oneWord._1 -> TFIDFCalc.tfIdf(oneWord, i, wordSetByType._2)))
+        }
     }
 
     //~~~~~~~~~~Remove stopwords~~~~~~~~~~
@@ -94,7 +101,7 @@ object PetuniaMain {
           vector.append(tfidfWordSet(i).get(word).get)
         } else vector.append(0d)
       }
-      if (i < listFiles0.length) {
+      if (i < numFiles0) {
         vectorWords.append(LabeledPoint(0d, Vectors.dense(vector.toArray)))
       } else {
         vectorWords.append(LabeledPoint(1d, Vectors.dense(vector.toArray)))
