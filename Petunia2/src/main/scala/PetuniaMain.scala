@@ -20,14 +20,14 @@ import java.io.FileWriter
 object PetuniaMain {
   def main(args: Array[String]): Unit = {
     //~~~~~~~~~~Initialization~~~~~~~~~~
-    val conf = new SparkConf().setAppName("ISLab.Petunia").setMaster("local[*]")
+    val conf = new SparkConf().setAppName("ISLab.Petunia")
     val sc = new SparkContext(conf)
 
-    val currentDir = new File(".").getCanonicalPath
-    println(currentDir)
+    //val currentDir = new File(".").getCanonicalPath
+    //println(currentDir)
     //~~~~~~~~~~Get all data directories~~~~~~~~~~
 
-    val inputDirPath = currentDir + "/data/in"
+    val inputDirPath = args(2) + "/data/in"
 
     val input0 = inputDirPath + File.separator + "0"
     val input1 = inputDirPath + File.separator + "1"
@@ -58,19 +58,22 @@ object PetuniaMain {
     var tfidfWordSet = new ArrayBuffer[Map[String, Double]](inputFiles.length) // Map[word, TF*IDF-value]
     val wordSetByType = wordSetByFile.splitAt(numFiles0)
     for (i <- 0 to inputFiles.length - 1) {
-      if (i < numFiles0)
+      var tfidfOneDoc = Map[String, Double]()
+      if (i < numFiles0) {
         for (oneWord <- wordSetByFile(i)) {
-          tfidfWordSet.append(Map(oneWord._1 -> TFIDFCalc.tfIdf(oneWord, i, wordSetByType._1)))
+          tfidfOneDoc += oneWord._1 -> TFIDFCalc.tfIdf(oneWord, i, wordSetByType._1)
         }
-      else
+      } else {
         for (oneWord <- wordSetByFile(i)) {
-          tfidfWordSet.append(Map(oneWord._1 -> TFIDFCalc.tfIdf(oneWord, i - numFiles0, wordSetByType._2)))
+          tfidfOneDoc += oneWord._1 -> TFIDFCalc.tfIdf(oneWord, i - numFiles0, wordSetByType._2)
         }
+      }
+      tfidfWordSet.append(tfidfOneDoc)
     }
 
     //~~~~~~~~~~Remove stopwords~~~~~~~~~~
     //// Load stopwords from file
-    val stopwordFilePath = "./libs/vnstopword.txt"
+    val stopwordFilePath = args(2) + "/libs/vietnamese-stopwords.txt"
     var arrStopwords = new ArrayBuffer[String]
     val swSource = Source.fromFile(stopwordFilePath)
     swSource.getLines.foreach { x => arrStopwords.append(x) }
@@ -91,7 +94,7 @@ object PetuniaMain {
         } else attrWords += x._1
       })
     }
-    PetuniaUtils.writeArray2File2(attrWords, "./libs/attr.txt")
+    //PetuniaUtils.writeArray2File2(attrWords, "./libs/attr.txt")
 
     //~~~~~~~~~~Create vector~~~~~~~~~~
     var vectorWords = new ArrayBuffer[LabeledPoint]
@@ -108,7 +111,7 @@ object PetuniaMain {
         vectorWords.append(LabeledPoint(1d, Vectors.dense(vector.toArray)))
       }
     }
-    PetuniaUtils.writeArray2File(vectorWords, "./libs/vector.txt")
+    //PetuniaUtils.writeArray2File(vectorWords, "./libs/vector.txt")
     val data = sc.parallelize[LabeledPoint](vectorWords)
     //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
