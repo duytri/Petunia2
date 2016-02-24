@@ -22,22 +22,20 @@ object PetuniaMain {
     //~~~~~~~~~~Initialization~~~~~~~~~~
     val conf = new SparkConf().setAppName("ISLab.Petunia")
     val sc = new SparkContext(conf)
+    val broadcastArgs = sc.broadcast(args)
 
-    //val currentDir = new File(".").getCanonicalPath
-    //println(currentDir)
     //~~~~~~~~~~Get all data directories~~~~~~~~~~
 
-    val inputDirPath = args(2) + "/data/in"
+    val inputDirPath = broadcastArgs.value(2) + "/data/in"
 
-    val input0 = inputDirPath + File.separator + "0"
-    val input1 = inputDirPath + File.separator + "1"
-
-    val inputDirFile0 = new File(input0)
-    val inputDirFile1 = new File(input1)
+    val input = (inputDirPath + File.separator + "0",inputDirPath + File.separator + "1")
+    
+    //val inputDirFile0 = new File(input0)
+    //val inputDirFile1 = new File(input1)
 
     //~~~~~~~~~~Get all input files~~~~~~~~~~
-    val listFiles0 = inputDirFile0.listFiles
-    val listFiles1 = inputDirFile1.listFiles
+    val listFiles0 = sc.parallelize((new File(input._1)).listFiles)
+    val listFiles1 = sc.parallelize((new File(input._2)).listFiles)
     var inputFiles = listFiles0 ++ listFiles1
     val numFiles0 = listFiles0.length
 
@@ -73,7 +71,7 @@ object PetuniaMain {
 
     //~~~~~~~~~~Remove stopwords~~~~~~~~~~
     //// Load stopwords from file
-    val stopwordFilePath = args(2) + "/libs/vietnamese-stopwords.txt"
+    val stopwordFilePath = broadcastArgs.value(2) + "/libs/vietnamese-stopwords.txt"
     var arrStopwords = new ArrayBuffer[String]
     val swSource = Source.fromFile(stopwordFilePath)
     swSource.getLines.foreach { x => arrStopwords.append(x) }
@@ -84,7 +82,7 @@ object PetuniaMain {
     }
 
     //~~~~~~~~~~Normalize by TFIDF~~~~~~~~~~
-    val lowerUpperBound = (args(0).toDouble, args(1).toDouble)
+    val lowerUpperBound = (broadcastArgs.value(0).toDouble, broadcastArgs.value(1).toDouble)
     println("Argument 0 (lower bound): " + lowerUpperBound._1 + " - Argument 1 (upper bound): " + lowerUpperBound._2)
     var attrWords = ArrayBuffer[String]()
     for (i <- 0 to inputFiles.length - 1) {
