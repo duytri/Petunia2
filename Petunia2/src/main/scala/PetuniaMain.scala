@@ -41,13 +41,13 @@ object PetuniaMain {
     var wordSetByFile0: RDD[Map[String, Int]] = sc.emptyRDD[Map[String, Int]]
     //Foreach text file
     listFiles0.map { x =>
-      wordSetByFile0 ++ sc.parallelize(PetuniaUtils.statWords(x))
+      wordSetByFile0 = wordSetByFile0.union(sc.parallelize(PetuniaUtils.statWords(x)))
     }
 
     var wordSetByFile1: RDD[Map[String, Int]] = sc.emptyRDD[Map[String, Int]]
     //Foreach text file
     listFiles1.map { x =>
-      wordSetByFile1 ++ sc.parallelize(PetuniaUtils.statWords(x))
+      wordSetByFile1 = wordSetByFile1.union(sc.parallelize(PetuniaUtils.statWords(x)))
     }
 
     println("So file 0: " + listFiles0.count)
@@ -55,14 +55,18 @@ object PetuniaMain {
 
     //~~~~~~~~~~Calculate TFIDF~~~~~~~~~~
     var tfidfWordSet0: RDD[Map[String, Double]] = sc.emptyRDD[Map[String, Double]] // Map[word, TF*IDF-value]
+    val bcWordSet0 = sc.broadcast(wordSetByFile0.collect)
+    val bcWordSet1 = sc.broadcast(wordSetByFile1.collect)
     wordSetByFile0.map(oneFile => {
-      tfidfWordSet0 ++ sc.parallelize(PetuniaUtils.statTFIDF(oneFile, wordSetByFile0))
+      tfidfWordSet0 = tfidfWordSet0.union(sc.parallelize(PetuniaUtils.statTFIDF(oneFile, bcWordSet0.value)))
     })
 
     var tfidfWordSet1: RDD[Map[String, Double]] = sc.emptyRDD[Map[String, Double]] // Map[word, TF*IDF-value]
     wordSetByFile1.map(oneFile => {
-      tfidfWordSet1 ++ sc.parallelize(PetuniaUtils.statTFIDF(oneFile, wordSetByFile1))
+      tfidfWordSet1 = tfidfWordSet1.union(sc.parallelize(PetuniaUtils.statTFIDF(oneFile, bcWordSet1.value)))
     })
+    tfidfWordSet0.cache
+    tfidfWordSet1.cache
 
     //~~~~~~~~~~Remove stopwords~~~~~~~~~~
     //// Load stopwords from file
@@ -71,43 +75,48 @@ object PetuniaMain {
     val swSource = Source.fromFile(stopwordFilePath)
     swSource.getLines.foreach { x => arrStopwords.append(x) }
     swSource.close
+    val bcStopwords = sc.broadcast(arrStopwords)
     //// Foreach document, remove stopwords
-    tfidfWordSet0.foreach(oneFile => oneFile --= arrStopwords)
-    tfidfWordSet1.foreach(oneFile => oneFile --= arrStopwords)
+    tfidfWordSet0.foreach(oneFile => oneFile --= bcStopwords.value)
+    tfidfWordSet1.foreach(oneFile => oneFile --= bcStopwords.value)
 
     //~~~~~~~~~~Normalize by TFIDF~~~~~~~~~~
     val lowerUpperBound = (broadcastArgs.value(0).toDouble, broadcastArgs.value(1).toDouble)
     println("Argument 0 (lower bound): " + lowerUpperBound._1 + " - Argument 1 (upper bound): " + lowerUpperBound._2)
     var attrWords: RDD[String] = sc.emptyRDD[String]
     tfidfWordSet0.foreach(oneFile => {
-      attrWords ++ sc.parallelize(oneFile.filter(x => x._2 > lowerUpperBound._1 && x._2 < lowerUpperBound._2).keySet.toSeq)
+      attrWords = attrWords.union(sc.parallelize(oneFile.filter(x => x._2 > lowerUpperBound._1 && x._2 < lowerUpperBound._2).keySet.toSeq))
     })
     tfidfWordSet1.foreach(oneFile => {
-      attrWords ++ sc.parallelize(oneFile.filter(x => x._2 > lowerUpperBound._1 && x._2 < lowerUpperBound._2).keySet.toSeq)
+      attrWords = attrWords.union(sc.parallelize(oneFile.filter(x => x._2 > lowerUpperBound._1 && x._2 < lowerUpperBound._2).keySet.toSeq))
     })
 
     //~~~~~~~~~~Create vector~~~~~~~~~~
     var vectorWords: RDD[LabeledPoint] = sc.emptyRDD[LabeledPoint]
-    /*for (i <- 0 to inputFiles.length - 1) {
-      var vector = new ArrayBuffer[Double]
-      for (word <- attrWords) {
-        if (tfidfWordSet(i).contains(word)) {
-          vector.append(tfidfWordSet(i).get(word).get)
-        } else vector.append(0d)
-      }
-      if (i < numFiles0) {
-        vectorWords.append(LabeledPoint(0d, Vectors.dense(vector.toArray)))
-      } else {
-        vectorWords.append(LabeledPoint(1d, Vectors.dense(vector.toArray)))
-      }
-    }*/
+    val bcAttrWords = sc.broadcast(attrWords.collect)
     tfidfWordSet0.foreach(oneFile => {
       var vector = new ArrayBuffer[Double]
-      attrWords
+      bcAttrWords.value.foreach { word =>
+        {
+          if (oneFile.contains(word)) {
+            vector.append(oneFile.get(word).get)
+          } else vector.append(0d)
+        }
+      }
+      vectorWords = vectorWords.union(sc.parallelize(Seq(LabeledPoint(0d, Vectors.dense(vector.toArray)))))
     })
-    
-    //PetuniaUtils.writeArray2File(vectorWords, "./libs/vector.txt")
-    //val data = sc.parallelize[LabeledPoint](vectorWords)
+    tfidfWordSet1.foreach(oneFile => {
+      var vector = new ArrayBuffer[Double]
+      bcAttrWords.value.foreach { word =>
+        {
+          if (oneFile.contains(word)) {
+            vector.append(oneFile.get(word).get)
+          } else vector.append(0d)
+        }
+      }
+      vectorWords = vectorWords.union(sc.parallelize(Seq(LabeledPoint(1d, Vectors.dense(vector.toArray)))))
+    })
+
     //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
     // Split data into training (70%) and test (30%).
@@ -131,14 +140,22 @@ object PetuniaMain {
     // Get evaluation metrics.
     val metrics = new BinaryClassificationMetrics(scoreAndLabels)
     val auROC = metrics.areaUnderROC()
-    val precision = metrics.precisionByThreshold.collect.toMap[Double, Double]
+    /*val precision = metrics.precisionByThreshold.collect.toMap[Double, Double]
     val recall = metrics.recallByThreshold.collect.toMap[Double, Double]
     val fMeasure = metrics.fMeasureByThreshold.collect.toMap[Double, Double]
     println("Threshold\t\tPrecision\t\tRecall\t\tF-Measure")
     precision.foreach(x => {
       println(x._1 + "\t\t" + x._2 + "\t\t" + recall.get(x._1).get + "\t\t" + fMeasure.get(x._1).get)
+    })*/
+    println("Score\t\t\tPoint")
+    scoreAndLabels.collect.foreach(x => {
+      println(x._1 + "\t\t\t" + x._2)
     })
 
     println("Area under ROC = " + auROC)
+
+    // Save and load model
+    //model.save(sc, broadcastArgs.value(3))
+    //val sameModel = SVMModel.load(sc, broadcastArgs.value(3))
   }
 }

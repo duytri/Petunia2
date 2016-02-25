@@ -31,7 +31,7 @@ object PetuniaUtils {
     Seq(addOrIgnore(wordsTmpArr))
   }
 
-  def statTFIDF(doc: Map[String, Int], allDocs: RDD[Map[String, Int]]): Seq[Map[String, Double]] = {
+  def statTFIDF(doc: Map[String, Int], allDocs: Array[Map[String, Int]]): Seq[Map[String, Double]] = {
     var tfidfOneDoc = Map[String, Double]()
     doc.foreach(oneWord => {
       tfidfOneDoc += oneWord._1 -> TFIDFCalc.tfIdf(oneWord, doc, allDocs)
