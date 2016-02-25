@@ -28,46 +28,41 @@ object PetuniaMain {
 
     val inputDirPath = broadcastArgs.value(2) + "/data/in"
 
-    val input = (inputDirPath + File.separator + "0",inputDirPath + File.separator + "1")
-    
+    val input = (inputDirPath + File.separator + "0", inputDirPath + File.separator + "1")
+
     //val inputDirFile0 = new File(input0)
     //val inputDirFile1 = new File(input1)
 
     //~~~~~~~~~~Get all input files~~~~~~~~~~
     val listFiles0 = sc.parallelize((new File(input._1)).listFiles)
     val listFiles1 = sc.parallelize((new File(input._2)).listFiles)
-    var inputFiles = listFiles0 ++ listFiles1
-    val numFiles0 = listFiles0.length
 
-    var wordSetByFile = new ArrayBuffer[Map[String, Int]](inputFiles.length) // Map[word, frequency in document]
+    //var wordSetByFile = new ArrayBuffer[Map[String, Int]](inputFiles.length) // Map[word, frequency in document]
+    var wordSetByFile0: RDD[Map[String, Int]] = sc.emptyRDD[Map[String, Int]]
     //Foreach text file
-    for (i <- 0 to inputFiles.length - 1) {
-      var wordsTmpArr = new ArrayBuffer[String]
-      val source = Source.fromFile(inputFiles(i).getAbsolutePath, "utf-8")
-      source.getLines.foreach { x => wordsTmpArr.append(x) }
-      // Fixed too many open files exception
-      source.close
-      wordSetByFile.append(PetuniaUtils.addOrIgnore(wordsTmpArr))
+    listFiles0.map { x =>
+      wordSetByFile0 ++ sc.parallelize(PetuniaUtils.statWords(x))
     }
-    println("inputDirFile0: " + listFiles0.length)
-    println("inputDirFile1: " + listFiles1.length)
-    println("inputFiles: " + inputFiles.length)
+
+    var wordSetByFile1: RDD[Map[String, Int]] = sc.emptyRDD[Map[String, Int]]
+    //Foreach text file
+    listFiles1.map { x =>
+      wordSetByFile1 ++ sc.parallelize(PetuniaUtils.statWords(x))
+    }
+
+    println("So file 0: " + listFiles0.count)
+    println("So file 1: " + listFiles1.count)
+
     //~~~~~~~~~~Calculate TFIDF~~~~~~~~~~
-    var tfidfWordSet = new ArrayBuffer[Map[String, Double]](inputFiles.length) // Map[word, TF*IDF-value]
-    val wordSetByType = wordSetByFile.splitAt(numFiles0)
-    for (i <- 0 to inputFiles.length - 1) {
-      var tfidfOneDoc = Map[String, Double]()
-      if (i < numFiles0) {
-        for (oneWord <- wordSetByFile(i)) {
-          tfidfOneDoc += oneWord._1 -> TFIDFCalc.tfIdf(oneWord, i, wordSetByType._1)
-        }
-      } else {
-        for (oneWord <- wordSetByFile(i)) {
-          tfidfOneDoc += oneWord._1 -> TFIDFCalc.tfIdf(oneWord, i - numFiles0, wordSetByType._2)
-        }
-      }
-      tfidfWordSet.append(tfidfOneDoc)
-    }
+    var tfidfWordSet0: RDD[Map[String, Double]] = sc.emptyRDD[Map[String, Double]] // Map[word, TF*IDF-value]
+    wordSetByFile0.map(oneFile => {
+      tfidfWordSet0 ++ sc.parallelize(PetuniaUtils.statTFIDF(oneFile, wordSetByFile0))
+    })
+
+    var tfidfWordSet1: RDD[Map[String, Double]] = sc.emptyRDD[Map[String, Double]] // Map[word, TF*IDF-value]
+    wordSetByFile1.map(oneFile => {
+      tfidfWordSet1 ++ sc.parallelize(PetuniaUtils.statTFIDF(oneFile, wordSetByFile1))
+    })
 
     //~~~~~~~~~~Remove stopwords~~~~~~~~~~
     //// Load stopwords from file
@@ -77,26 +72,23 @@ object PetuniaMain {
     swSource.getLines.foreach { x => arrStopwords.append(x) }
     swSource.close
     //// Foreach document, remove stopwords
-    for (i <- 0 to inputFiles.length - 1) {
-      tfidfWordSet(i) --= arrStopwords
-    }
+    tfidfWordSet0.foreach(oneFile => oneFile --= arrStopwords)
+    tfidfWordSet1.foreach(oneFile => oneFile --= arrStopwords)
 
     //~~~~~~~~~~Normalize by TFIDF~~~~~~~~~~
     val lowerUpperBound = (broadcastArgs.value(0).toDouble, broadcastArgs.value(1).toDouble)
     println("Argument 0 (lower bound): " + lowerUpperBound._1 + " - Argument 1 (upper bound): " + lowerUpperBound._2)
-    var attrWords = ArrayBuffer[String]()
-    for (i <- 0 to inputFiles.length - 1) {
-      tfidfWordSet(i).foreach(x => {
-        if (x._2 <= lowerUpperBound._1 || x._2 >= lowerUpperBound._2) {
-          tfidfWordSet(i).remove(x._1)
-        } else attrWords += x._1
-      })
-    }
-    //PetuniaUtils.writeArray2File2(attrWords, "./libs/attr.txt")
+    var attrWords: RDD[String] = sc.emptyRDD[String]
+    tfidfWordSet0.foreach(oneFile => {
+      attrWords ++ sc.parallelize(oneFile.filter(x => x._2 > lowerUpperBound._1 && x._2 < lowerUpperBound._2).keySet.toSeq)
+    })
+    tfidfWordSet1.foreach(oneFile => {
+      attrWords ++ sc.parallelize(oneFile.filter(x => x._2 > lowerUpperBound._1 && x._2 < lowerUpperBound._2).keySet.toSeq)
+    })
 
     //~~~~~~~~~~Create vector~~~~~~~~~~
-    var vectorWords = new ArrayBuffer[LabeledPoint]
-    for (i <- 0 to inputFiles.length - 1) {
+    var vectorWords: RDD[LabeledPoint] = sc.emptyRDD[LabeledPoint]
+    /*for (i <- 0 to inputFiles.length - 1) {
       var vector = new ArrayBuffer[Double]
       for (word <- attrWords) {
         if (tfidfWordSet(i).contains(word)) {
@@ -108,13 +100,18 @@ object PetuniaMain {
       } else {
         vectorWords.append(LabeledPoint(1d, Vectors.dense(vector.toArray)))
       }
-    }
+    }*/
+    tfidfWordSet0.foreach(oneFile => {
+      var vector = new ArrayBuffer[Double]
+      attrWords
+    })
+    
     //PetuniaUtils.writeArray2File(vectorWords, "./libs/vector.txt")
-    val data = sc.parallelize[LabeledPoint](vectorWords)
+    //val data = sc.parallelize[LabeledPoint](vectorWords)
     //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
     // Split data into training (70%) and test (30%).
-    val splits = data.randomSplit(Array(0.7, 0.3), seed = 11L)
+    val splits = vectorWords.randomSplit(Array(0.7, 0.3), seed = 11L)
     val training = splits(0).cache()
     val test = splits(1)
 

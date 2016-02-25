@@ -2,6 +2,7 @@ package main.scala
 
 import scala.collection.mutable.ArrayBuffer
 import scala.collection.mutable.Map
+import org.apache.spark.rdd.RDD
 
 object TFIDFCalc {
   def tf(term: String, doc: Map[String, Int]): Double = {
@@ -10,33 +11,17 @@ object TFIDFCalc {
     doc(term) / wordCount
   }
 
-  def idf(term: String, allDocs: ArrayBuffer[Map[String, Int]]): Double = {
+  def idf(term: String, allDocs: RDD[Map[String, Int]]): Double = {
     var n = 0d
     allDocs.foreach(x => {
       if (x.contains(term)) n += 1
     })
 
-    return Math.log10(allDocs.length / n)
+    return Math.log10(allDocs.count() / n)
   }
 
-  def tfIdf(word: (String, Int), docIndex: Int, allDocs: ArrayBuffer[Map[String, Int]]): Double = {
+  def tfIdf(word: (String, Int), doc: Map[String, Int], allDocs: RDD[Map[String, Int]]): Double = {
     val term = word._1
-    val doc = allDocs(docIndex)
     return tf(term, doc) * idf(term, allDocs)
-  }
-  
-  def idf2(term: String, allDocs: ArrayBuffer[Map[String, Int]]): (Int, Double) = {
-    var n = 0d
-    allDocs.foreach(x => {
-      if (x.contains(term)) n += 1
-    })
-
-    return (allDocs.length -> n)
-  }
-
-  def tfIdf2(word: (String, Int), docIndex: Int, allDocs: ArrayBuffer[Map[String, Int]]): (Double, (Int, Double)) = {
-    val term = word._1
-    val doc = allDocs(docIndex)
-    return (tf(term, doc) -> idf2(term, allDocs))
   }
 }

@@ -3,7 +3,7 @@ import Keys._
 import sbtassembly.AssemblyPlugin.autoImport._
 
 name := "Petunia2"
-version := "0.2-SNAPSHOT"
+version := "0.3-SNAPSHOT"
 organization := "uit.islab"
 scalaVersion := "2.10.5"
 

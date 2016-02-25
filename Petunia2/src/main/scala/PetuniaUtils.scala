@@ -6,6 +6,8 @@ import scala.collection.mutable.ArrayBuffer
 import java.io.File
 import java.io.BufferedWriter
 import java.io.FileWriter
+import org.apache.spark.rdd.RDD
+import scala.io.Source
 
 object PetuniaUtils {
   def addOrIgnore(someWords: ArrayBuffer[String]): Map[String, Int] = {
@@ -18,6 +20,23 @@ object PetuniaUtils {
       }
     }
     eachWordSet
+  }
+
+  def statWords(file: File): Seq[Map[String, Int]] = {
+    var wordsTmpArr = new ArrayBuffer[String]
+    val source = Source.fromFile(file.getAbsolutePath, "utf-8")
+    source.getLines.foreach { y => wordsTmpArr.append(y) }
+    // Fixed too many open files exception
+    source.close
+    Seq(addOrIgnore(wordsTmpArr))
+  }
+
+  def statTFIDF(doc: Map[String, Int], allDocs: RDD[Map[String, Int]]): Seq[Map[String, Double]] = {
+    var tfidfOneDoc = Map[String, Double]()
+    doc.foreach(oneWord => {
+      tfidfOneDoc += oneWord._1 -> TFIDFCalc.tfIdf(oneWord, doc, allDocs)
+    })
+    Seq(tfidfOneDoc)
   }
 
   def writeArray2File(array: ArrayBuffer[LabeledPoint], filePath: String): Unit = {
