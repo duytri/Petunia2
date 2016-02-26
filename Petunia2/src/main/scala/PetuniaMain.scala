@@ -19,14 +19,17 @@ import java.io.FileWriter
 
 object PetuniaMain {
   def main(args: Array[String]): Unit = {
+    println("Start...")
     //~~~~~~~~~~Initialization~~~~~~~~~~
     val conf = new SparkConf().setAppName("ISLab.Petunia")
     val sc = new SparkContext(conf)
     val broadcastArgs = sc.broadcast(args)
 
+    println("Finish initializing configuration! Getting all input...")
+
     //~~~~~~~~~~Get all data directories~~~~~~~~~~
 
-    val inputDirPath = broadcastArgs.value(2) + "/data/in"
+    val inputDirPath = broadcastArgs.value(2) + "input" + File.separator + "in"
 
     val input = (inputDirPath + File.separator + "0", inputDirPath + File.separator + "1")
 
@@ -34,39 +37,39 @@ object PetuniaMain {
     //val inputDirFile1 = new File(input1)
 
     //~~~~~~~~~~Get all input files~~~~~~~~~~
-    val listFiles0 = sc.parallelize((new File(input._1)).listFiles)
-    val listFiles1 = sc.parallelize((new File(input._2)).listFiles)
+    val listFiles0 = sc.parallelize(PetuniaUtils.getListOfSubFiles((new File(input._1))))
+    val listFiles1 = sc.parallelize(PetuniaUtils.getListOfSubFiles((new File(input._2))))
 
     //var wordSetByFile = new ArrayBuffer[Map[String, Int]](inputFiles.length) // Map[word, frequency in document]
     var wordSetByFile0: RDD[Map[String, Int]] = sc.emptyRDD[Map[String, Int]]
     //Foreach text file
-    listFiles0.map { x =>
-      wordSetByFile0 = wordSetByFile0.union(sc.parallelize(PetuniaUtils.statWords(x)))
-    }
+    wordSetByFile0 = wordSetByFile0.union(listFiles0.map { fileDir =>
+      PetuniaUtils.statWords(fileDir)
+    })
 
     var wordSetByFile1: RDD[Map[String, Int]] = sc.emptyRDD[Map[String, Int]]
     //Foreach text file
-    listFiles1.map { x =>
-      wordSetByFile1 = wordSetByFile1.union(sc.parallelize(PetuniaUtils.statWords(x)))
-    }
+    wordSetByFile1 = wordSetByFile1.union(listFiles1.map { fileDir =>
+      PetuniaUtils.statWords(fileDir)
+    })
 
-    println("So file 0: " + listFiles0.count)
-    println("So file 1: " + listFiles1.count)
+    println("Finish collecting and distributing input! Start calculate TFIDF...")
 
     //~~~~~~~~~~Calculate TFIDF~~~~~~~~~~
     var tfidfWordSet0: RDD[Map[String, Double]] = sc.emptyRDD[Map[String, Double]] // Map[word, TF*IDF-value]
     val bcWordSet0 = sc.broadcast(wordSetByFile0.collect)
     val bcWordSet1 = sc.broadcast(wordSetByFile1.collect)
-    wordSetByFile0.map(oneFile => {
-      tfidfWordSet0 = tfidfWordSet0.union(sc.parallelize(PetuniaUtils.statTFIDF(oneFile, bcWordSet0.value)))
-    })
+    tfidfWordSet0 = tfidfWordSet0.union(wordSetByFile0.map(oneFile => {
+      PetuniaUtils.statTFIDF(oneFile, bcWordSet0.value)
+    }))
 
     var tfidfWordSet1: RDD[Map[String, Double]] = sc.emptyRDD[Map[String, Double]] // Map[word, TF*IDF-value]
-    wordSetByFile1.map(oneFile => {
-      tfidfWordSet1 = tfidfWordSet1.union(sc.parallelize(PetuniaUtils.statTFIDF(oneFile, bcWordSet1.value)))
-    })
+    tfidfWordSet1 = tfidfWordSet1.union(wordSetByFile1.map(oneFile => {
+      PetuniaUtils.statTFIDF(oneFile, bcWordSet1.value)
+    }))
     tfidfWordSet0.cache
     tfidfWordSet1.cache
+    println("Finish caching TFIDF-word-set! Removing stopwords...")
 
     //~~~~~~~~~~Remove stopwords~~~~~~~~~~
     //// Load stopwords from file
@@ -80,21 +83,25 @@ object PetuniaMain {
     tfidfWordSet0.foreach(oneFile => oneFile --= bcStopwords.value)
     tfidfWordSet1.foreach(oneFile => oneFile --= bcStopwords.value)
 
+    println("Removed stopwords! Start normalizing TFIDF-word-set...")
+
     //~~~~~~~~~~Normalize by TFIDF~~~~~~~~~~
     val lowerUpperBound = (broadcastArgs.value(0).toDouble, broadcastArgs.value(1).toDouble)
     println("Argument 0 (lower bound): " + lowerUpperBound._1 + " - Argument 1 (upper bound): " + lowerUpperBound._2)
     var attrWords: RDD[String] = sc.emptyRDD[String]
-    tfidfWordSet0.foreach(oneFile => {
-      attrWords = attrWords.union(sc.parallelize(oneFile.filter(x => x._2 > lowerUpperBound._1 && x._2 < lowerUpperBound._2).keySet.toSeq))
-    })
-    tfidfWordSet1.foreach(oneFile => {
-      attrWords = attrWords.union(sc.parallelize(oneFile.filter(x => x._2 > lowerUpperBound._1 && x._2 < lowerUpperBound._2).keySet.toSeq))
-    })
+    attrWords = attrWords.union(tfidfWordSet0.flatMap(oneFile => {
+      oneFile.filter(x => x._2 > lowerUpperBound._1 && x._2 < lowerUpperBound._2).keySet
+    }))
+    attrWords = attrWords.union(tfidfWordSet1.flatMap(oneFile => {
+      oneFile.filter(x => x._2 > lowerUpperBound._1 && x._2 < lowerUpperBound._2).keySet
+    }))
+
+    println("Let's create vectors...")
 
     //~~~~~~~~~~Create vector~~~~~~~~~~
     var vectorWords: RDD[LabeledPoint] = sc.emptyRDD[LabeledPoint]
     val bcAttrWords = sc.broadcast(attrWords.collect)
-    tfidfWordSet0.foreach(oneFile => {
+    vectorWords = vectorWords.union(tfidfWordSet0.map(oneFile => {
       var vector = new ArrayBuffer[Double]
       bcAttrWords.value.foreach { word =>
         {
@@ -103,9 +110,9 @@ object PetuniaMain {
           } else vector.append(0d)
         }
       }
-      vectorWords = vectorWords.union(sc.parallelize(Seq(LabeledPoint(0d, Vectors.dense(vector.toArray)))))
-    })
-    tfidfWordSet1.foreach(oneFile => {
+      LabeledPoint(0d, Vectors.dense(vector.toArray))
+    }))
+    vectorWords = vectorWords.union(tfidfWordSet1.map(oneFile => {
       var vector = new ArrayBuffer[Double]
       bcAttrWords.value.foreach { word =>
         {
@@ -114,30 +121,32 @@ object PetuniaMain {
           } else vector.append(0d)
         }
       }
-      vectorWords = vectorWords.union(sc.parallelize(Seq(LabeledPoint(1d, Vectors.dense(vector.toArray)))))
-    })
+      LabeledPoint(1d, Vectors.dense(vector.toArray))
+    }))
 
     //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-    // Split data into training (70%) and test (30%).
+    println("And now the time to start SVM model training...")
+
+    println("Split data into training (70%) and test (30%).")
     val splits = vectorWords.randomSplit(Array(0.7, 0.3), seed = 11L)
     val training = splits(0).cache()
     val test = splits(1)
 
-    // Run training algorithm to build the model
+    println("Run training algorithm to build the model.")
     val numIterations = 100
     val model = SVMWithSGD.train(training, numIterations)
 
     // Clear the default threshold.
     model.clearThreshold()
 
-    // Compute raw scores on the test set.
+    println("Compute raw scores on the test set.")
     val scoreAndLabels = test.map { point =>
       val score = model.predict(point.features)
       (score, point.label)
     }
 
-    // Get evaluation metrics.
+    println("Get evaluation metrics.")
     val metrics = new BinaryClassificationMetrics(scoreAndLabels)
     val auROC = metrics.areaUnderROC()
     /*val precision = metrics.precisionByThreshold.collect.toMap[Double, Double]
@@ -147,15 +156,16 @@ object PetuniaMain {
     precision.foreach(x => {
       println(x._1 + "\t\t" + x._2 + "\t\t" + recall.get(x._1).get + "\t\t" + fMeasure.get(x._1).get)
     })*/
+
+    println("Area under ROC = " + auROC)
+
     println("Score\t\t\tPoint")
     scoreAndLabels.collect.foreach(x => {
       println(x._1 + "\t\t\t" + x._2)
     })
 
-    println("Area under ROC = " + auROC)
-
-    // Save and load model
-    //model.save(sc, broadcastArgs.value(3))
+    println("Save and load model.")
+    //model.save(sc, broadcastArgs.value(3)) //save in "myDir+data" may cause error
     //val sameModel = SVMModel.load(sc, broadcastArgs.value(3))
   }
 }

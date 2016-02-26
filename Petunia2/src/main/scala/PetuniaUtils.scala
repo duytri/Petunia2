@@ -3,11 +3,11 @@ package main.scala
 import scala.collection.mutable.Map
 import org.apache.spark.mllib.regression.LabeledPoint
 import scala.collection.mutable.ArrayBuffer
-import java.io.File
 import java.io.BufferedWriter
 import java.io.FileWriter
 import org.apache.spark.rdd.RDD
 import scala.io.Source
+import java.io.File
 
 object PetuniaUtils {
   def addOrIgnore(someWords: ArrayBuffer[String]): Map[String, Int] = {
@@ -21,22 +21,28 @@ object PetuniaUtils {
     }
     eachWordSet
   }
+  
+  def getListOfSubFiles(dir: File): List[String] =
+    dir.listFiles
+       .filter(_.isFile)
+       .map(_.getAbsolutePath)
+       .toList
 
-  def statWords(file: File): Seq[Map[String, Int]] = {
+  def statWords(fileDir:String): Map[String, Int] = {
     var wordsTmpArr = new ArrayBuffer[String]
-    val source = Source.fromFile(file.getAbsolutePath, "utf-8")
+    val source = Source.fromFile(fileDir, "utf-8")
     source.getLines.foreach { y => wordsTmpArr.append(y) }
     // Fixed too many open files exception
     source.close
-    Seq(addOrIgnore(wordsTmpArr))
+    addOrIgnore(wordsTmpArr)
   }
 
-  def statTFIDF(doc: Map[String, Int], allDocs: Array[Map[String, Int]]): Seq[Map[String, Double]] = {
+  def statTFIDF(doc: Map[String, Int], allDocs: Array[Map[String, Int]]): Map[String, Double] = {
     var tfidfOneDoc = Map[String, Double]()
     doc.foreach(oneWord => {
       tfidfOneDoc += oneWord._1 -> TFIDFCalc.tfIdf(oneWord, doc, allDocs)
     })
-    Seq(tfidfOneDoc)
+    tfidfOneDoc
   }
 
   def writeArray2File(array: ArrayBuffer[LabeledPoint], filePath: String): Unit = {
