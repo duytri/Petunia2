@@ -57,8 +57,10 @@ object PetuniaMain {
 
     //~~~~~~~~~~Calculate TFIDF~~~~~~~~~~
     var tfidfWordSet0: RDD[Map[String, Double]] = sc.emptyRDD[Map[String, Double]] // Map[word, TF*IDF-value]
-    val bcWordSet0 = sc.broadcast(wordSetByFile0.collect)
-    val bcWordSet1 = sc.broadcast(wordSetByFile1.collect)
+    var wordSet0 = wordSetByFile0.collect
+    var wordSet1 = wordSetByFile1.collect
+    val bcWordSet0 = sc.broadcast(wordSet0)
+    val bcWordSet1 = sc.broadcast(wordSet1)
     tfidfWordSet0 = tfidfWordSet0.union(wordSetByFile0.map(oneFile => {
       PetuniaUtils.statTFIDF(oneFile, bcWordSet0.value)
     }))
@@ -100,7 +102,8 @@ object PetuniaMain {
 
     //~~~~~~~~~~Create vector~~~~~~~~~~
     var vectorWords: RDD[LabeledPoint] = sc.emptyRDD[LabeledPoint]
-    val bcAttrWords = sc.broadcast(attrWords.collect)
+    val arrAttribute = attrWords.collect
+    val bcAttrWords = sc.broadcast(arrAttribute)
     vectorWords = vectorWords.union(tfidfWordSet0.map(oneFile => {
       var vector = new ArrayBuffer[Double]
       bcAttrWords.value.foreach { word =>
@@ -148,24 +151,55 @@ object PetuniaMain {
 
     println("Get evaluation metrics.")
     val metrics = new BinaryClassificationMetrics(scoreAndLabels)
-    val auROC = metrics.areaUnderROC()
-    /*val precision = metrics.precisionByThreshold.collect.toMap[Double, Double]
+    //val auROC = metrics.areaUnderROC()
+
+    val auPR = metrics.areaUnderPR
+    println("Area under PR-Curve = " + auPR)
+
+    val precision = metrics.precisionByThreshold.collect.toMap[Double, Double]
     val recall = metrics.recallByThreshold.collect.toMap[Double, Double]
     val fMeasure = metrics.fMeasureByThreshold.collect.toMap[Double, Double]
     println("Threshold\t\tPrecision\t\tRecall\t\tF-Measure")
     precision.foreach(x => {
       println(x._1 + "\t\t" + x._2 + "\t\t" + recall.get(x._1).get + "\t\t" + fMeasure.get(x._1).get)
-    })*/
-
-    println("Area under ROC = " + auROC)
-
-    println("Score\t\t\tPoint")
-    scoreAndLabels.collect.foreach(x => {
-      println(x._1 + "\t\t\t" + x._2)
     })
 
+    /*println("Score\t\t\tPoint")
+    scoreAndLabels.collect.foreach(x => {
+      println(x._1 + "\t\t\t" + x._2)
+    })*/
+
     println("Save and load model.")
-    //model.save(sc, broadcastArgs.value(3)) //save in "myDir+data" may cause error
-    //val sameModel = SVMModel.load(sc, broadcastArgs.value(3))
+    model.save(sc, broadcastArgs.value(3)) //save in "myDir+data" may cause error
+    val sameModel = SVMModel.load(sc, broadcastArgs.value(3))
+
+    println("Testing...")
+    val testWords = PetuniaUtils.statWords(broadcastArgs.value(4)) //Load word set
+    var tfidfTest = Map[String, Double]()
+    //Calculate TFIDF
+    tfidfTest ++= testWords.filter(wordSet0.contains).map(oneWord => {
+      val tf = oneWord._2 / testWords.foldLeft(0d)(_ + _._2)
+      val idf = Math.log10(wordSet0.size / wordSet0.filter(x => { x.contains(oneWord._1) }).length)
+      oneWord._1 -> tf * idf
+    })
+    tfidfTest ++= testWords.filter(wordSet1.contains).map(oneWord => {
+      val tf = oneWord._2 / testWords.foldLeft(0d)(_ + _._2)
+      val idf = Math.log10(wordSet1.size / wordSet1.filter(x => { x.contains(oneWord._1) }).length)
+      oneWord._1 -> tf * idf
+    })
+    //Remove stopwords
+    tfidfTest --= arrStopwords
+    //Create vector
+    var testVector = new ArrayBuffer[Double]
+    arrAttribute.foreach { word =>
+      {
+        if (tfidfTest.contains(word)) {
+          testVector.append(tfidfTest.get(word).get)
+        } else testVector.append(0d)
+      }
+    }
+    //Test
+    val result = sameModel.predict(Vectors.dense(testVector.toArray))
+    
   }
 }
